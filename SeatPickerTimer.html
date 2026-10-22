@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>학급 좌석 배치 & 수업 도구</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* 기본 화면 스타일 */
+        body { font-family: 'Malgun Gothic', sans-serif; text-align: center; background-color: #f4f7f6; margin: 0; padding: 10px; }
+        .container { max-width: 1200px; width: 100%; margin: auto; padding: 25px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); display: flex; flex-direction: column; min-height: 95vh; box-sizing: border-box; }
+        
+        .header-section { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 2px solid #eee; }
+        .main-title { font-size: 2em; font-weight: 800; color: #1565c0; margin: 0; }
+        .sub-guide { font-size: 0.85em; color: #666; margin-top: 8px; font-weight: bold; }
+        
+        /* 수업용 타이머 */
+        .timer-panel { background: #e8f5e9; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 15px; border: 2px solid #a5d6a7; flex-wrap: wrap; }
+        .timer-title { font-weight: bold; color: #2e7d32; font-size: 1.1em; }
+        .timer-inputs select { padding: 8px; border-radius: 6px; border: 1px solid #81c784; font-weight: bold; }
+        .btn-timer-start { background: #2e7d32; color: white; padding: 8px 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+        /* 수업 타이머 전용 팝업(모달) 스타일 */
+        #timerModal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); align-items: center; justify-content: center; }
+        .timer-modal-content { background-color: white; padding: 60px; border-radius: 40px; text-align: center; border: 10px solid #2e7d32; box-shadow: 0 0 50px rgba(46,125,50,0.4); width: 80%; max-width: 700px; }
+        #modalClockDisplay { font-family: 'Courier New', monospace; font-size: 10rem; font-weight: 900; color: #1b5e20; margin: 20px 0; line-height: 1; }
+        .timer-modal-msg { font-size: 2.5rem; color: #d32f2f; font-weight: bold; display: none; margin-bottom: 20px; }
+        .timer-modal-label { font-size: 2rem; color: #2e7d32; font-weight: bold; }
+
+        .file-upload-zone { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 15px; margin-top: 15px; flex-wrap: wrap; }
+        .file-label { background: #607d8b; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        #excelFile { display: none; }
+        #fileNameDisplay { font-size: 0.9em; color: #666; font-weight: bold; }
+        
+        .class-selector-wrapper { margin-bottom: 20px; padding: 15px; background: #eceff1; border-radius: 12px; display: none; }
+        .class-selector { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+        .class-btn { padding: 10px 24px; border: 2px solid #cfd8dc; border-radius: 30px; background: white; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; color: #455a64; }
+        .class-btn.active { background: #2196f3; color: white; border-color: #1565c0; transform: scale(1.05); }
+        
+        /* 좌석 그리드 */
+        .grid { display: grid; grid-template-columns: repeat(5, 1fr); column-gap: 12px; row-gap: 22px; flex-grow: 1; margin-top: 10px; }
+        
+        /* 자리번호 표시를 위해 position: relative 추가 */
+        .seat { position: relative; width: 100%; aspect-ratio: 2 / 1; border: 1px solid #ddd; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; background: #fff; font-weight: bold; overflow: hidden; container-type: inline-size; print-color-adjust: exact; -webkit-print-color-adjust: exact; transition: transform 0.1s, border-color 0.2s, box-shadow 0.2s; cursor: pointer; user-select: none; }
+        
+        /* 자리번호 라벨 스타일 추가 */
+        .seat-label { position: absolute; top: 6px; left: 6px; font-size: 12px; color: #78909c; font-weight: bold; }
+
+        /* 좌석 선택(맞바꾸기) 효과 스타일 */
+        .seat.selected-seat {
+            border: 3px solid #ff1744 !important;
+            background-color: #fff3e0 !important;
+            box-shadow: 0 0 12px rgba(255, 23, 68, 0.4);
+            transform: scale(1.03);
+            z-index: 10;
+        }
+
+        .s-no { font-size: 16cqi; color: #2e7d32 !important; margin-bottom: 2%; font-weight: 900; }
+        .s-name { font-size: 22cqi; color: #1565c0 !important; white-space: nowrap; }
+        .empty { background-color: #f5f5f5 !important; border-style: dashed; color: #bbb; }
+        .student { background-color: #e3f2fd !important; border-color: #90caf9; }
+        .shuffling { transform: scale(0.95); background-color: #fffde7 !important; border-color: #fbc02d !important; }
+        
+        .podium { width: 100%; margin: 25px auto 10px; padding: 15px 0; background: #455a64 !important; color: white !important; font-weight: bold; border-radius: 6px; font-size: 1.2em; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+        
+        .btn-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 20px 0; align-items: center; }
+        .setup-group { display: flex; align-items: center; gap: 8px; background: #fff3e0; padding: 8px 15px; border-radius: 10px; border: 1px solid #ffe0b2; }
+        
+        .main-btn { flex: 1; min-width: 120px; padding: 14px 10px; font-size: 15px; cursor: pointer; border: none; border-radius: 10px; color: white; font-weight: bold; }
+        .btn-shuffle { background: #4caf50; }
+        .btn-shuffle:disabled { background: #a5d6a7; cursor: not-allowed; }
+        .btn-pick { background: #ff9800; }
+        .btn-pick:disabled { background: #ffe0b2; cursor: not-allowed; }
+        .btn-reset { background: #f44336; }
+        .btn-print { background: #2196f3; }
+
+        /* 학생 뽑기 팝업 */
+        #pickModal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); align-items: center; justify-content: center; }
+        .modal-content { background-color: white; padding: 50px; border-radius: 30px; width: 90%; max-width: 600px; text-align: center; border: 8px solid #ff9800; box-shadow: 0 0 50px rgba(255,152,0,0.5); }
+        
+        #modalTimerDisplay { font-size: 1.5rem; color: #666; font-weight: bold; margin-bottom: 10px; }
+        #displayPickNo { font-size: 3rem; color: #2e7d32; font-weight: 900; margin-bottom: 5px; }
+        #displayPickName { font-size: 6.5rem; font-weight: 900; color: #1565c0; margin: 15px 0; text-shadow: 3px 3px 10px rgba(0,0,0,0.1); word-break: keep-all; }
+        .winner-effect { color: #d32f2f !important; transform: scale(1.1); text-shadow: 5px 5px 20px rgba(211, 47, 47, 0.3) !important; }
+        .modal-close-btn { margin-top: 30px; background: #455a64; color: white; border: none; padding: 12px 40px; font-size: 1.4rem; border-radius: 12px; cursor: pointer; }
+
+        /* 인쇄 시 스타일 */
+        @media print {
+            @page { size: auto; margin: 0; }
+            body { background: white !important; padding: 0; margin: 0; height: 100vh; }
+            .timer-panel, .file-upload-zone, .btn-group, .class-selector-wrapper, .sub-guide, #pickModal, #timerModal { display: none !important; }
+            .header-section { border-bottom: none; margin-bottom: 5px; }
+            .main-title { font-size: 2.8em !important; color: #000 !important; }
+            .container { width: 100% !important; max-width: none !important; height: 100vh !important; padding: 10mm !important; box-shadow: none !important; border: none !important; display: flex !important; flex-direction: column !important; justify-content: space-between; }
+            .grid { flex-grow: 1; display: grid !important; grid-template-columns: repeat(5, 1fr) !important; column-gap: 10px !important; row-gap: 2vh !important; margin-top: 5px; align-content: stretch; }
+            .seat { height: 100% !important; border: 2px solid #000 !important; border-radius: 5px !important; aspect-ratio: auto !important; transform: none !important; box-shadow: none !important; }
+            .s-no { color: #2e7d32 !important; font-size: 16pt !important; }
+            .s-name { color: #1565c0 !important; font-size: 26pt !important; }
+            .podium { margin-top: 10px !important; height: 50px; line-height: 50px; padding: 0; background: #455a64 !important; color: white !important; border: 1px solid #000; }
+            .seat-label { font-size: 10pt !important; color: #555 !important; } /* 인쇄 시 자리번호 스타일 추가 */
+        }
+    </style>
+</head>
+<body>
+<div id="mainContainer" class="container">
+    <div class="timer-panel">
+        <span class="timer-title">⏱️ 수업 타이머:</span>
+        <div class="timer-inputs">
+            <select id="timerMin"></select> 분 <select id="timerSec"></select> 초
+        </div>
+        <button class="btn-timer-start" id="startTimerBtn" onclick="startMainTimer()">시작</button>
+    </div>
+
+    <div class="header-section">
+        <h1 id="titleText" class="main-title">🎯 학급 좌석 배치</h1>
+        <div class="sub-guide">💡 바꿀 두 좌석을 차례대로 클릭하면 서로 자리가 바뀌어 위치합니다.</div>
+        <div class="file-upload-zone">
+            <label for="excelFile" class="file-label">📁 엑셀 파일 선택</label>
+            <input type="file" id="excelFile" accept=".xlsx, .xls" onchange="handleFile(event)">
+            <div id="fileNameDisplay">명렬표 엑셀 파일을 불러와 주세요.</div>
+        </div>
+    </div>
+    
+    <div id="selectorWrapper" class="class-selector-wrapper">
+        <div id="classButtons" class="class-selector"></div>
+    </div>
+    
+    <div class="btn-group">
+        <button id="shuffleBtn" class="main-btn btn-shuffle" onclick="startShuffleWithAnimation()" disabled>좌석 무작위 섞기</button>
+        <div class="setup-group">
+            <span style="font-size:13px; font-weight:bold;">시간:</span>
+            <select id="pickTimerSetting">
+                <option value="1">1초</option>
+                <option value="2">2초</option>
+                <option value="3">3초</option>
+                <option value="4">4초</option>
+                <option value="5" selected>5초</option>
+            </select>
+        </div>
+        <button id="pickBtn" class="main-btn btn-pick" onclick="pickRandomWithCustomTimer()" disabled>🎉 학생 뽑기</button>
+        <button class="main-btn btn-reset" onclick="resetAll()">초기화</button>
+        <button class="main-btn btn-print" onclick="handlePrint()">인쇄 / 저장</button>
+    </div>
+    
+    <div id="seatGrid" class="grid"></div>
+    <div class="podium">칠 판</div>
+</div>
+
+<div id="timerModal">
+    <div class="timer-modal-content">
+        <div id="timerModalLabel" class="timer-modal-label">🕒 남은 수업 시간</div>
+        <div id="timerEndMsg" class="timer-modal-msg">🔔 수업이 종료되었습니다!</div>
+        <div id="modalClockDisplay">00:00</div>
+        <button class="modal-close-btn" onclick="stopMainTimer()">닫기 / 타이머 종료</button>
+    </div>
+</div>
+
+<div id="pickModal">
+    <div class="modal-content">
+        <div id="modalTimerDisplay">추첨 중...</div>
+        <div id="displayPickNo">? 번</div>
+        <div id="displayPickName">? ? ?</div>
+        <button id="modalCloseBtn" class="modal-close-btn" style="display:none;" onclick="closeModal()">확인</button>
+    </div>
+</div>
+
+<script>
+    let allClassData = {}; 
+    let currentStudentData = []; 
+    let currentSeatArray = []; 
+    let selectedSeatIndex = null; 
+    let currentSheetName = ""; 
+    let countdownInterval;
+    let isShuffling = false;
+
+    window.onload = function() { 
+        initGrid(); 
+        initTimerOptions(); 
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+                stopMainTimer();
+            }
+        });
+    };
+
+    // --- 인쇄 처리 ---
+    function handlePrint() {
+        if (!currentSheetName) { alert("반을 먼저 선택해주세요."); return; }
+        const titleElement = document.getElementById('titleText');
+        const originalTitle = titleElement.innerText;
+        titleElement.innerText = `제 ${currentSheetName} 좌석 배치도`;
+        window.print();
+        setTimeout(() => { titleElement.innerText = originalTitle; }, 500);
+    }
+
+    // --- 수업 타이머 로직 ---
+    function initTimerOptions() {
+        const minSelect = document.getElementById('timerMin');
+        const secSelect = document.getElementById('timerSec');
+        minSelect.innerHTML = '';
+        secSelect.innerHTML = '';
+        for(let i=0; i<=60; i++) minSelect.add(new Option(i + '분', i));
+        for(let i=0; i<60; i+=5) secSelect.add(new Option(i + '초', i));
+    }
+
+    function startMainTimer() {
+        clearInterval(countdownInterval);
+        const mins = parseInt(document.getElementById('timerMin').value) || 0;
+        const secs = parseInt(document.getElementById('timerSec').value) || 0;
+        let totalSeconds = mins * 60 + secs;
+
+        if (totalSeconds <= 0) return alert("시간을 설정해주세요.");
+
+        const modal = document.getElementById('timerModal');
+        const modalClock = document.getElementById('modalClockDisplay');
+        const endMsg = document.getElementById('timerEndMsg');
+        const label = document.getElementById('timerModalLabel');
+        
+        modal.style.display = 'flex';
+        endMsg.style.display = 'none';
+        label.style.display = 'block';
+        modalClock.style.color = '#1b5e20';
+
+        document.getElementById('startTimerBtn').disabled = true;
+
+        const updateDisplay = (s) => {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            const timeStr = `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+            modalClock.innerText = timeStr;
+        };
+
+        updateDisplay(totalSeconds);
+
+        countdownInterval = setInterval(() => {
+            totalSeconds--;
+            updateDisplay(totalSeconds);
+
+            if (totalSeconds <= 0) {
+                clearInterval(countdownInterval);
+                document.getElementById('startTimerBtn').disabled = false;
+                
+                label.style.display = 'none';
+                endMsg.style.display = 'block';
+                modalClock.style.color = '#d32f2f';
+            }
+        }, 1000);
+    }
+
+    function stopMainTimer() {
+        clearInterval(countdownInterval);
+        document.getElementById('startTimerBtn').disabled = false;
+        document.getElementById('timerModal').style.display = 'none';
+    }
+
+    // --- 좌석 클릭 및 위치 맞바꾸기 처리 ---
+    function handleSeatClick(index) {
+        if (isShuffling || currentStudentData.length === 0) return;
+
+        if (selectedSeatIndex === null) {
+            selectedSeatIndex = index;
+        } else if (selectedSeatIndex === index) {
+            selectedSeatIndex = null;
+        } else {
+            const temp = currentSeatArray[selectedSeatIndex];
+            currentSeatArray[selectedSeatIndex] = currentSeatArray[index];
+            currentSeatArray[index] = temp;
+            selectedSeatIndex = null;
+        }
+        renderGrid();
+    }
+
+    // --- 화면에 좌석 그리드 렌더링 ---
+    function renderGrid() {
+        const grid = document.getElementById('seatGrid');
+        grid.innerHTML = '';
+        
+        const totalRows = Math.ceil(currentSeatArray.length / 5);
+
+        currentSeatArray.forEach((s, idx) => {
+            const div = document.createElement('div');
+            let className = s ? 'seat student' : 'seat empty';
+            if (idx === selectedSeatIndex) {
+                className += ' selected-seat';
+            }
+            div.className = className;
+            
+            const gridRow = Math.floor(idx / 5);
+            const seatRow = totalRows - gridRow;
+            
+            const gridCol = idx % 5;
+            const seatCol = 5 - gridCol;
+            
+            const seatLabelHtml = `<div class="seat-label">[${seatRow}${seatCol}]</div>`;
+            const contentHtml = s ? `<div class="s-no">${s.no}</div><div class="s-name">${s.name}</div>` : `<div>빈자리</div>`;
+
+            div.innerHTML = seatLabelHtml + contentHtml;
+            div.onclick = () => handleSeatClick(idx);
+            grid.appendChild(div);
+        });
+    }
+
+    function initGrid(totalSeats = 30) {
+        currentSeatArray = new Array(totalSeats).fill(null);
+        selectedSeatIndex = null;
+        renderGrid();
+    }
+
+    // --- 엑셀 데이터 파싱 (3열 추가 읽기) ---
+    function handleFile(e) {
+        const file = e.target.files[0]; 
+        if (!file) return;
+        document.getElementById('fileNameDisplay').innerText = `로드됨: ${file.name}`;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            allClassData = {};
+            const btnContainer = document.getElementById('classButtons'); 
+            btnContainer.innerHTML = ''; 
+            document.getElementById('selectorWrapper').style.display = 'block';
+            
+            workbook.SheetNames.forEach((sheetName) => {
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet, {header: 1});
+                const filteredData = jsonData.filter(row => row.length >= 2 && row[0] !== undefined && row[1] !== undefined && !isNaN(parseInt(row[0])))
+                                            .map(row => ({ 
+                                                no: parseInt(row[0]), 
+                                                name: String(row[1]).trim(),
+                                                // 3열 데이터(인덱스 2)가 있으면 fixedSeat에 저장
+                                                fixedSeat: row[2] != null ? String(row[2]).trim() : null
+                                            }))
+                                            .sort((a, b) => a.no - b.no);
+                if (filteredData.length > 0) {
+                    allClassData[sheetName] = filteredData;
+                    const btn = document.createElement('button'); 
+                    btn.className = 'class-btn'; 
+                    btn.innerText = sheetName;
+                    btn.onclick = () => selectClass(sheetName, btn);
+                    btnContainer.appendChild(btn);
+                }
+            });
+            
+            if (Object.keys(allClassData).length === 0) {
+                alert("유효한 학생 데이터(1열: 번호, 2열: 이름)를 찾을 수 없습니다.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function selectClass(sheetName, btnElement) {
+        currentSheetName = sheetName;
+        document.querySelectorAll('.class-btn').forEach(btn => btn.classList.remove('active'));
+        btnElement.classList.add('active');
+        currentStudentData = allClassData[sheetName];
+        document.getElementById('titleText').innerText = `🎯 학급 좌석 배치 - ${sheetName}`;
+        document.getElementById('shuffleBtn').disabled = false;
+        document.getElementById('pickBtn').disabled = false;
+        
+        // 반 선택 시 고정석을 반영하여 좌석 생성
+        generateSeats(false, true); 
+    }
+
+    function startShuffleWithAnimation() {
+        if (currentStudentData.length === 0 || isShuffling) return;
+        isShuffling = true;
+        selectedSeatIndex = null;
+        const shuffleBtn = document.getElementById('shuffleBtn');
+        const pickBtn = document.getElementById('pickBtn');
+        const titleText = document.getElementById('titleText');
+        const originalTitle = titleText.innerText;
+        shuffleBtn.disabled = true; pickBtn.disabled = true;
+        
+        let timeLeft = parseFloat(document.getElementById('pickTimerSetting').value); 
+        
+        const shuffleInterval = setInterval(() => {
+            // 애니메이션 진행 중에는 고정석 무시하고 모두 랜덤으로 보여줌
+            generateSeats(true, false);
+            document.querySelectorAll('.seat.student').forEach(s => s.classList.add('shuffling'));
+        }, 100);
+        
+        const timerInterval = setInterval(() => {
+            timeLeft -= 0.1;
+            if (timeLeft <= 0) {
+                clearInterval(shuffleInterval); clearInterval(timerInterval);
+                
+                // 완료 시점에 고정석 배치를 우선 적용하고 나머지를 무작위 배정
+                generateSeats(true, true);
+                
+                titleText.innerText = originalTitle;
+                shuffleBtn.disabled = false; pickBtn.disabled = false; isShuffling = false;
+                const tempTitle = titleText.innerText;
+                titleText.innerText = "✅ 좌석 배치 완료!";
+                setTimeout(() => { titleText.innerText = tempTitle; }, 2000);
+            } else { titleText.innerText = `🎲 좌석 섞는 중... (${timeLeft.toFixed(1)}초)`; }
+        }, 100);
+    }
+
+    // --- 고정 좌석 및 랜덤 배치 로직 통합 ---
+    // applyFixed: 3열에 있는 지정 좌석(고정석) 규칙을 적용할지 여부
+    function generateSeats(shouldShuffle = false, applyFixed = true) {
+        const totalSeats = Math.max(30, Math.ceil(currentStudentData.length / 5) * 5);
+        const totalRows = totalSeats / 5;
+        
+        currentSeatArray = new Array(totalSeats).fill(null); 
+        
+        // 뒷줄(그리드 0번 행) 빈자리 배치 로직
+        const emptyPriorityOrder = [0, 4, 2, 1, 3];
+        let firstRowEmpty = [false, false, false, false, false];
+        const totalEmptyNeeded = totalSeats - currentStudentData.length;
+        for (let i = 0; i < Math.min(totalEmptyNeeded, 5); i++) { 
+            firstRowEmpty[emptyPriorityOrder[i]] = true; 
+        }
+        
+        // 학생이 앉을 수 있는 유효한 좌석 인덱스(앞줄, 즉 아래에서부터 채움) 생성
+        let validSeatIndices = [];
+        for (let r = totalRows - 1; r >= 0; r--) {
+            for (let c = 4; c >= 0; c--) {
+                if (r === 0 && firstRowEmpty[c]) continue; // 배제된 빈자리 스킵
+                validSeatIndices.push(r * 5 + c);
+            }
+        }
+
+        let fixedStudents = [];
+        let randomStudents = [];
+        
+        if (applyFixed) {
+            currentStudentData.forEach(student => {
+                // 3열 데이터가 있고, 2자리 숫자 정규식에 부합하는 경우 고정석 학생으로 분류
+                if (student.fixedSeat && /^\d{2}$/.test(student.fixedSeat)) {
+                    fixedStudents.push(student);
+                } else {
+                    randomStudents.push(student);
+                }
+            });
+        } else {
+            randomStudents = [...currentStudentData];
+        }
+
+        // 셔플이 필요한 경우 랜덤 학생 리스트 섞기
+        if (shouldShuffle) {
+            for (let i = randomStudents.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1)); 
+                [randomStudents[i], randomStudents[j]] = [randomStudents[j], randomStudents[i]];
+            }
+        }
+
+        let availableIndices = [...validSeatIndices];
+        
+        // 1. 고정 좌석 학생 먼저 해당 자리에 배치
+        fixedStudents.forEach(student => {
+            const seatNum = String(student.fixedSeat);
+            const sRow = parseInt(seatNum.charAt(0));
+            const sCol = parseInt(seatNum.charAt(1));
+            
+            // 자리번호를 그리드 배열 인덱스로 역변환
+            const gridRow = totalRows - sRow;
+            const gridCol = 5 - sCol;
+            const targetIdx = gridRow * 5 + gridCol;
+            
+            const aIdx = availableIndices.indexOf(targetIdx);
+            
+            // 지정된 자리가 유효한 자리고 비어있다면 배치
+            if (aIdx !== -1 && !currentSeatArray[targetIdx]) {
+                currentSeatArray[targetIdx] = student;
+                availableIndices.splice(aIdx, 1); // 사용 가능한 자리에서 제거
+            } else {
+                // 혹시 잘못된 번호를 입력했거나, 해당 자리가 이미 선점된 경우 랜덤 배정으로 넘김
+                randomStudents.push(student);
+            }
+        });
+        
+        // 2. 나머지 학생들을 남은 자리에 차례대로 배치
+        randomStudents.forEach(student => {
+            if (availableIndices.length > 0) {
+                const idx = availableIndices.shift();
+                currentSeatArray[idx] = student;
+            }
+        });
+        
+        renderGrid();
+    }
+
+    function pickRandomWithCustomTimer() {
+        if (currentStudentData.length === 0) return;
+        const timeVal = parseFloat(document.getElementById('pickTimerSetting').value);
+        const modal = document.getElementById('pickModal');
+        const modalTimer = document.getElementById('modalTimerDisplay');
+        const displayNo = document.getElementById('displayPickNo');
+        const displayName = document.getElementById('displayPickName');
+        const closeBtn = document.getElementById('modalCloseBtn');
+        
+        closeBtn.style.display = 'none'; 
+        displayName.classList.remove('winner-effect'); 
+        modal.style.display = 'flex';
+        
+        let timeLeft = timeVal;
+        const shuffler = setInterval(() => {
+            const temp = currentStudentData[Math.floor(Math.random() * currentStudentData.length)];
+            displayNo.innerText = `${temp.no}번`; 
+            displayName.innerText = temp.name;
+        }, 50);
+        
+        const timer = setInterval(() => {
+            timeLeft -= 0.1;
+            if (timeLeft <= 0) {
+                clearInterval(timer); 
+                clearInterval(shuffler);
+                const final = currentStudentData[Math.floor(Math.random() * currentStudentData.length)];
+                modalTimer.innerText = "🎊 당첨을 축하합니다! 🎊";
+                displayNo.innerText = `제 ${final.no}번`; 
+                displayName.innerText = final.name;
+                displayName.classList.add('winner-effect'); 
+                closeBtn.style.display = 'inline-block';
+            } else { 
+                modalTimer.innerText = `두구두구... (${timeLeft.toFixed(1)}초)`; 
+            }
+        }, 100);
+    }
+
+    function closeModal() { 
+        document.getElementById('pickModal').style.display = 'none'; 
+    }
+
+    function resetAll() {
+        allClassData = {};
+        currentStudentData = [];
+        currentSheetName = "";
+        
+        initGrid();
+        
+        document.getElementById('titleText').innerText = "🎯 학급 좌석 배치";
+        document.getElementById('fileNameDisplay').innerText = "명렬표 엑셀 파일을 불러와 주세요.";
+        document.getElementById('excelFile').value = "";
+        document.getElementById('selectorWrapper').style.display = "none";
+        document.getElementById('classButtons').innerHTML = "";
+        document.getElementById('shuffleBtn').disabled = true;
+        document.getElementById('pickBtn').disabled = true;
+        
+        stopMainTimer();
+    }
+</script>
+</body>
+</html>

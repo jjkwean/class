@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>수업용 타이머</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f4f3; }
+        .container { text-align: center; background: white; padding: 40px; border-radius: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); width: 350px; }
+        
+        /* 설정과 표시를 하나로 합친 영역 */
+        .timer-box { 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            gap: 10px; 
+            margin: 30px 0; 
+            background: #f9f9f9; 
+            padding: 20px; 
+            border-radius: 15px;
+            border: 3px solid #eee;
+        }
+        
+        .timer-box input { 
+            width: 90px; 
+            font-size: 60px; 
+            font-weight: bold; 
+            text-align: center; 
+            border: none; 
+            background: transparent; 
+            color: #333;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        
+        .timer-box input:focus { outline: none; color: #2196f3; }
+        .timer-box span { font-size: 50px; font-weight: bold; color: #999; }
+        
+        /* 입력 잠금(비활성화) 상태 스타일 */
+        .timer-box input:disabled { color: #333; cursor: default; }
+
+        .btn-group { display: flex; flex-direction: column; gap: 12px; }
+        button { padding: 15px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; transition: 0.3s; }
+        
+        #startBtn { background-color: #4caf50; shadow: 0 4px #388e3c; }
+        #startBtn:active { transform: translateY(2px); box-shadow: 0 2px #388e3c; }
+        
+        #stopBtn { background-color: #ff9800; }
+        #resetBtn { background-color: #78909c; }
+        
+        /* 시간 초과 효과 */
+        .timeout-bg { background-color: #ffebee; border-color: #f44336; }
+        .timeout-text { color: #f44336 !important; animation: blink 0.6s infinite; }
+        @keyframes blink { 50% { opacity: 0.3; } }
+        
+        #msg { height: 30px; font-weight: bold; color: #f44336; margin-bottom: 10px; font-size: 22px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="margin-top: 0; color: #008800;">⏲️ 수업 타이머</h2>
+    
+    <div id="msg"></div>
+
+    <div class="timer-box" id="timerBox">
+        <input type="number" id="min" value="00" min="0" max="99" oninput="padValue(this)">
+        <span>:</span>
+        <input type="number" id="sec" value="00" min="0" max="59" oninput="padValue(this)">
+    </div>
+
+    <div class="btn-group">
+        <button id="startBtn" onclick="startTimer()">시작</button>
+        <button id="stopBtn" onclick="stopTimer()">일시정지</button>
+        <button id="resetBtn" onclick="resetTimer()">초기화</button>
+    </div>
+</div>
+
+<script>
+    let timerId;
+    let isRunning = false;
+    const minEl = document.getElementById('min');
+    const secEl = document.getElementById('sec');
+    const boxEl = document.getElementById('timerBox');
+    const msgEl = document.getElementById('msg');
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function padValue(el) {
+        if (el.value.length > 2) el.value = el.value.slice(0, 2);
+    }
+
+    function playAlarm() {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = 880;
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 1.5);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 1.5);
+    }
+
+    function lockInput(lock) {
+        minEl.disabled = lock;
+        secEl.disabled = lock;
+    }
+
+    function startTimer() {
+        if (isRunning) return;
+
+        let m = parseInt(minEl.value) || 0;
+        let s = parseInt(secEl.value) || 0;
+
+        if (m === 0 && s === 0) {
+            alert("시간을 입력해 주세요.");
+            return;
+        }
+
+        isRunning = true;
+        lockInput(true); // 시작 시 입력창 잠금
+        msgEl.innerText = "";
+        boxEl.classList.remove('timeout-bg');
+        minEl.classList.remove('timeout-text');
+        secEl.classList.remove('timeout-text');
+
+        timerId = setInterval(() => {
+            if (s === 0) {
+                if (m === 0) {
+                    clearInterval(timerId);
+                    timerId = null;
+                    isRunning = false;
+                    finish();
+                    return;
+                }
+                m--;
+                s = 59;
+            } else {
+                s--;
+            }
+            minEl.value = String(m).padStart(2, '0');
+            secEl.value = String(s).padStart(2, '0');
+        }, 1000);
+    }
+
+    function finish() {
+        playAlarm();
+        msgEl.innerText = "⏰ 시간 초과!";
+        boxEl.classList.add('timeout-bg');
+        minEl.classList.add('timeout-text');
+        secEl.classList.add('timeout-text');
+        lockInput(false); // 종료 시 다시 풀림
+    }
+
+    function stopTimer() {
+        clearInterval(timerId);
+        timerId = null;
+        isRunning = false;
+        lockInput(false); // 정지 시 수정 가능하도록 풀림
+    }
+
+    function resetTimer() {
+        stopTimer();
+        minEl.value = "00";
+        secEl.value = "00";
+        msgEl.innerText = "";
+        boxEl.classList.remove('timeout-bg');
+        minEl.classList.remove('timeout-text');
+        secEl.classList.remove('timeout-text');
+    }
+</script>
+
+</body>
+</html>

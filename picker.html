@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>반별 시트 자동 분류 추첨기</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; text-align: center; background-color: #f0f4f3; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        
+        .upload-section { border: 2px dashed #4caf50; padding: 25px; border-radius: 15px; margin-bottom: 25px; background: #f9fff9; }
+        #fileInput { display: none; }
+        .file-label { background: #4caf50; color: white; padding: 12px 25px; border-radius: 8px; cursor: pointer; display: inline-block; font-weight: bold; margin-bottom: 10px; }
+
+        /* 동적으로 생성될 반 선택 버튼 영역 */
+        .class-selector { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 25px; min-height: 50px; }
+        .class-btn { padding: 12px 20px; border: 2px solid #ddd; border-radius: 12px; background: white; cursor: pointer; font-weight: bold; transition: 0.3s; font-size: 16px; }
+        .class-btn.active { background: #2196f3; color: white; border-color: #1565c0; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3); }
+
+        .result-box { height: 180px; display: flex; flex-direction: column; justify-content: center; align-items: center; margin: 25px 0; border: 4px solid #f0f0f0; border-radius: 20px; background: #ffffff; transition: 0.3s; }
+        #pickedName { font-size: 55px; font-weight: bold; color: #1565c0; margin: 5px 0; }
+        #pickedNo { font-size: 24px; color: #2e7d32; font-weight: bold; }
+
+        .main-btn { width: 100%; padding: 20px; font-size: 24px; font-weight: bold; border: none; border-radius: 15px; cursor: pointer; color: white; background: #2196f3; box-shadow: 0 6px #1976d2; transition: 0.1s; }
+        .main-btn:active { box-shadow: 0 2px #1976d2; transform: translateY(4px); }
+        .main-btn:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; transform: none; }
+
+        .info-text { font-size: 14px; color: #777; margin-top: 15px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color: #333; margin-bottom: 20px;">🏫 반별 시트 통합 추첨기</h2>
+
+    <div class="upload-section">
+        <label for="fileInput" class="file-label">📁 엑셀 파일 불러오기</label>
+        <input type="file" id="fileInput" accept=".xlsx, .xls" onchange="loadExcelSheets(event)">
+        <div id="fileName" style="font-size: 14px; color: #555; font-weight: bold;">시트별로 학생이 나누어진 파일을 올려주세요.</div>
+    </div>
+
+    <div id="classButtons" class="class-selector">
+        </div>
+
+    <div class="result-box" id="resultBox">
+        <div id="pickedNo">준비</div>
+        <div id="pickedName">반을 선택해주세요</div>
+    </div>
+
+    <button id="pickBtn" class="main-btn" onclick="startShuffle()" disabled>번호 뽑기</button>
+    
+    <p class="info-text">
+        ※ 엑셀의 <b>각 시트 이름</b>이 반 이름이 됩니다.<br>
+        ※ 첫 번째 열은 <b>번호</b>, 두 번째 열은 <b>이름</b>으로 구성해주세요.
+    </p>
+</div>
+
+<script>
+    let allClassData = {}; // { "4반": [{no:1, name:'홍길동'}...], "5반": [...] }
+    let selectedClassName = "";
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // 엑셀 파일 읽기 및 시트별 분류
+    function loadExcelSheets(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        document.getElementById('fileName').innerText = `로드 중: ${file.name}`;
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            
+            allClassData = {}; // 데이터 초기화
+            const btnContainer = document.getElementById('classButtons');
+            btnContainer.innerHTML = ''; // 버튼 초기화
+
+            workbook.SheetNames.forEach(sheetName => {
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet, {header: 1});
+
+                // 유효한 학생 데이터만 필터링 (번호가 숫자인 경우)
+                const students = jsonData
+                    .filter(row => row.length >= 2 && !isNaN(parseInt(row[0])))
+                    .map(row => ({ no: parseInt(row[0]), name: row[1] }));
+
+                if (students.length > 0) {
+                    allClassData[sheetName] = students;
+                    
+                    // 반 선택 버튼 생성
+                    const btn = document.createElement('button');
+                    btn.className = 'class-btn';
+                    btn.innerText = sheetName;
+                    btn.onclick = () => selectClass(sheetName, btn);
+                    btnContainer.appendChild(btn);
+                }
+            });
+
+            if (Object.keys(allClassData).length > 0) {
+                document.getElementById('fileName').innerText = `✅ 총 ${Object.keys(allClassData).length}개 반 로드 완료`;
+            } else {
+                alert("유효한 학생 데이터가 들어있는 시트를 찾지 못했습니다.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // 반 선택 처리
+    function selectClass(sheetName, btnElement) {
+        selectedClassName = sheetName;
+        
+        // 모든 버튼 비활성화 시각 효과
+        document.querySelectorAll('.class-btn').forEach(b => b.classList.remove('active'));
+        btnElement.classList.add('active');
+
+        document.getElementById('pickedNo').innerText = `${sheetName}`;
+        document.getElementById('pickedName').innerText = "준비 완료!";
+        document.getElementById('pickBtn').disabled = false;
+    }
+
+    // 추첨 연출 및 시작
+    function startShuffle() {
+        const studentList = allClassData[selectedClassName];
+        if (!studentList) return;
+
+        const btn = document.getElementById('pickBtn');
+        const nameDisplay = document.getElementById('pickedName');
+        const noDisplay = document.getElementById('pickedNo');
+        
+        btn.disabled = true;
+        let count = 0;
+        const maxTicks = 15; // 셔플 횟수
+
+        const interval = setInterval(() => {
+            const randomStudent = studentList[Math.floor(Math.random() * studentList.length)];
+            noDisplay.innerText = `${randomStudent.no}번`;
+            nameDisplay.innerText = randomStudent.name;
+            
+            // 셔플 소리 (짧은 비프음)
+            playTick(440 + (count * 20)); 
+
+            count++;
+            if (count >= maxTicks) {
+                clearInterval(interval);
+                const finalStudent = studentList[Math.floor(Math.random() * studentList.length)];
+                noDisplay.innerText = `${finalStudent.no}번`;
+                nameDisplay.innerText = finalStudent.name;
+                
+                playFinalSound();
+                btn.disabled = false;
+            }
+        }, 80);
+    }
+
+    function playTick(freq) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.frequency.value = freq;
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    function playFinalSound() {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+        osc.frequency.exponentialRampToValueAtTime(1046.50, audioCtx.currentTime + 0.3); // C6
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+    }
+</script>
+
+</body>
+</html>
